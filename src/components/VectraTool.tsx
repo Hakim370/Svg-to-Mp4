@@ -515,41 +515,47 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
           </div>
         </div>
 
-        {/* GIFTRA Promo */}
-        <div className="card bg-[linear-gradient(135deg,rgba(255,61,127,0.04),rgba(155,77,255,0.06),rgba(0,212,255,0.04))] border border-pink-glow/20 rounded-[18px] overflow-hidden relative group">
-          <div className="ch px-5 py-4 border-b border-pink-glow/15 flex items-center justify-between bg-gradient-to-r from-pink-glow/10 to-transparent">
+        {/* Aura News & Updates */}
+        <div className="card bg-[linear-gradient(135deg,rgba(0,212,255,0.04),rgba(155,77,255,0.06),rgba(255,61,127,0.04))] border border-cyan-glow/20 rounded-[18px] overflow-hidden relative group">
+          <div className="ch px-5 py-4 border-b border-cyan-glow/15 flex items-center justify-between bg-gradient-to-r from-cyan-glow/10 to-transparent">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-pink-glow to-purple-glow flex items-center justify-center text-lg shadow-[0_0_18px_rgba(255,61,127,0.35)]">🎞</div>
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-glow to-purple-glow flex items-center justify-center text-lg shadow-[0_0_18px_rgba(0,212,255,0.35)]">📢</div>
               <div>
-                <div className="font-bold text-sm tracking-[3px] bg-gradient-to-r from-pink-glow to-purple-glow bg-clip-text text-transparent">GIFTRA</div>
-                <div className="font-mono text-[7px] text-pink-glow/50 tracking-[2px] uppercase">SVG → GIF Converter</div>
+                <div className="font-bold text-sm tracking-[3px] bg-gradient-to-r from-cyan-glow to-purple-glow bg-clip-text text-transparent uppercase">Latest News</div>
+                <div className="font-mono text-[7px] text-cyan-glow/50 tracking-[2px] uppercase">Aura Studio Updates</div>
               </div>
             </div>
-            <div className="font-mono text-[7px] tracking-[2px] px-2 py-0.5 rounded-full bg-pink-glow/15 border border-pink-glow/30 text-pink-glow">FREE TOOL</div>
+            <div className="font-mono text-[7px] tracking-[2px] px-2 py-0.5 rounded-full bg-cyan-glow/15 border border-cyan-glow/30 text-cyan-glow animate-pulse">NEW</div>
           </div>
           <div className="cb p-5">
             <div className="font-mono text-[9px] text-text-dim leading-relaxed mb-4">
-              Need a <b>GIF</b> instead of a video? <b>GIFTRA</b> converts your animated SVG into a shareable .GIF file.
+              Stay tuned for <b>Professional Assets</b>, new animation templates, and high-speed engine updates.
             </div>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              <div className="flex items-center gap-2 p-2 bg-black/25 border border-pink-glow/10 rounded-lg font-mono text-[7px] text-text-dim">
-                <div className="w-1 h-1 rounded-full bg-pink-glow shadow-[0_0_6px_var(--color-pink-glow)]" />
-                SVG → GIF
+            <div className="flex flex-col gap-2 mb-4">
+              <div className="flex items-center justify-between p-2 bg-black/25 border border-cyan-glow/10 rounded-lg font-mono text-[7px] text-text-dim group/item hover:bg-cyan-glow/5 transition-colors">
+                <div className="flex items-center gap-2">
+                  <div className="w-1 h-1 rounded-full bg-cyan-glow shadow-[0_0_6px_var(--color-cyan-glow)]" />
+                  Engine Optimization v2.0
+                </div>
+                <span className="text-[6px] opacity-40">ACTIVE</span>
               </div>
-              <div className="flex items-center gap-2 p-2 bg-black/25 border border-pink-glow/10 rounded-lg font-mono text-[7px] text-text-dim">
-                <div className="w-1 h-1 rounded-full bg-pink-glow shadow-[0_0_6px_var(--color-pink-glow)]" />
-                Custom FPS
+              <div className="flex items-center justify-between p-2 bg-black/25 border border-cyan-glow/10 rounded-lg font-mono text-[7px] text-text-dim group/item hover:bg-cyan-glow/5 transition-colors">
+                <div className="flex items-center gap-2">
+                  <div className="w-1 h-1 rounded-full bg-purple-glow shadow-[0_0_6px_var(--color-purple-glow)]" />
+                  New SVG Template Library
+                </div>
+                <span className="text-[6px] opacity-40">COMING</span>
               </div>
             </div>
             <a 
-              href="https://mp4togifconverter.blogspot.com/" 
+              href="https://www.facebook.com/hakimulla0370" 
               target="_blank"
-              className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-pink-glow to-purple-glow text-white rounded-xl font-bold text-[10px] tracking-widest uppercase hover:scale-105 transition-all shadow-[0_4px_20px_rgba(255,61,127,0.3)] button-shine-effect"
+              className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-cyan-glow to-purple-glow text-white rounded-xl font-bold text-[10px] tracking-widest uppercase hover:scale-105 transition-all shadow-[0_4px_20px_rgba(0,212,255,0.3)] button-shine-effect"
             >
-              Try GIFTRA Free
+              Connect on Facebook
             </a>
           </div>
-          <div className="absolute inset-0 bg-gradient-to-br from-pink-glow/5 via-transparent to-purple-glow/5 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="absolute inset-0 bg-gradient-to-br from-cyan-glow/5 via-transparent to-purple-glow/5 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
 
         {/* History */}
