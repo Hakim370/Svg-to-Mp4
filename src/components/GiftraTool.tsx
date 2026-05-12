@@ -52,7 +52,7 @@ export function GiftraTool({ initialSVG, clearInitialSVG }: GiftraToolProps) {
 
   // Persistence
   const saveSettings = async () => {
-    const settings = { resolution, fps, duration, bg };
+    const settings = { resolution, fps, duration, bg, quality };
     localStorage.setItem('giftra_settings', JSON.stringify(settings));
 
     if (auth.currentUser) {
@@ -80,6 +80,7 @@ export function GiftraTool({ initialSVG, clearInitialSVG }: GiftraToolProps) {
         if (s.fps) setFps(s.fps);
         if (s.duration) setDuration(s.duration);
         if (s.bg) setBg(s.bg);
+        if (s.quality) setQuality(s.quality);
       } catch (e) {
         console.warn('Local settings parse error');
       }
@@ -96,6 +97,7 @@ export function GiftraTool({ initialSVG, clearInitialSVG }: GiftraToolProps) {
             if (s.fps) setFps(s.fps);
             if (s.duration) setDuration(s.duration);
             if (s.bg) setBg(s.bg);
+            if (s.quality) setQuality(s.quality);
           }
         }
       };
@@ -226,6 +228,9 @@ export function GiftraTool({ initialSVG, clearInitialSVG }: GiftraToolProps) {
       }
 
       setStatus('Muxing GIF…');
+      // Mapping quality (10-100) to sampleInterval (20-1)
+      const sampleInterval = Math.max(1, Math.round(21 - (quality / 5)));
+
       gifshot.createGIF({
         images: frames,
         gifWidth: W,
@@ -233,7 +238,7 @@ export function GiftraTool({ initialSVG, clearInitialSVG }: GiftraToolProps) {
         interval: 1 / fps,
         numFrames: totalFrames,
         frameDuration: 1 / fps,
-        sampleInterval: 10,
+        sampleInterval: sampleInterval,
         numWorkers: 2
       }, (obj: any) => {
         if (obj.error) {
@@ -357,25 +362,65 @@ export function GiftraTool({ initialSVG, clearInitialSVG }: GiftraToolProps) {
         </div>
 
         <div className="card bg-s1 border border-border-b1 rounded-[18px] p-6 shadow-xl shadow-bg/50">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-2">
-              <label className="font-mono text-[10px] text-text-dim tracking-widest uppercase">Resolution</label>
-              <select value={resolution} onChange={e => setResolution(e.target.value)} className="bg-s2 border border-border-b2 rounded-lg p-3 text-text-main font-mono text-[11px] outline-none hover:border-pink-glow/50 transition-all cursor-pointer">
-                <option value="250x250">250×250 (Avatar)</option>
-                <option value="500x500">500×500 (Standard)</option>
-                <option value="800x600">800×600 (Large)</option>
-              </select>
+          <div className="flex flex-col gap-5">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <label className="font-mono text-[10px] text-text-dim tracking-widest uppercase">Resolution</label>
+                <select value={resolution} onChange={e => setResolution(e.target.value)} className="bg-s2 border border-border-b2 rounded-lg p-3 text-text-main font-mono text-[11px] outline-none hover:border-pink-glow/50 transition-all cursor-pointer">
+                  <option value="250x250">250×250 (Avatar)</option>
+                  <option value="500x500">500×500 (Standard)</option>
+                  <option value="800x600">800×600 (Large)</option>
+                  <option value="1000x1000">1000×1000 (HD)</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="font-mono text-[10px] text-text-dim tracking-widest uppercase">FPS</label>
+                <select value={fps} onChange={e => setFps(Number(e.target.value))} className="bg-s2 border border-border-b2 rounded-lg p-3 text-text-main font-mono text-[11px] outline-none hover:border-pink-glow/50 transition-all cursor-pointer">
+                  <option value="5">5 FPS (Small File)</option>
+                  <option value="10">10 FPS (Standard)</option>
+                  <option value="15">15 FPS (Smooth)</option>
+                  <option value="20">20 FPS (High Quality)</option>
+                </select>
+              </div>
             </div>
-            <div className="flex flex-col gap-2">
-              <label className="font-mono text-[10px] text-text-dim tracking-widest uppercase">FPS</label>
-              <select value={fps} onChange={e => setFps(Number(e.target.value))} className="bg-s2 border border-border-b2 rounded-lg p-3 text-text-main font-mono text-[11px] outline-none hover:border-pink-glow/50 transition-all cursor-pointer">
-                <option value="5">5 FPS (Small File)</option>
-                <option value="10">10 FPS (Standard)</option>
-                <option value="15">15 FPS (Smooth)</option>
-                <option value="20">20 FPS (High Quality)</option>
-              </select>
+
+            <div className="grid grid-cols-2 gap-4">
+               <div className="flex flex-col gap-2">
+                  <label className="font-mono text-[10px] text-text-dim tracking-widest uppercase">Background</label>
+                  <select value={bg} onChange={e => setBg(e.target.value)} className="bg-s2 border border-border-b2 p-3 rounded-xl font-mono text-[10px] text-white outline-none hover:border-pink-glow/50 transition-all">
+                      <option value="#000000">Black</option>
+                      <option value="#0b0b0b">Dark Gray</option>
+                      <option value="#ffffff">White</option>
+                      <option value="transparent">Transparent (Black BG)</option>
+                  </select>
+               </div>
+               <div className="flex flex-col gap-2">
+                  <label className="font-mono text-[10px] text-text-dim tracking-widest uppercase text-right">Duration (s)</label>
+                  <input 
+                    type="number" 
+                    value={duration} 
+                    onChange={e => setDuration(Number(e.target.value))} 
+                    min={1} max={10} 
+                    className="bg-s2 border border-border-b2 rounded-lg p-3 text-text-main font-mono text-[11px] outline-none hover:border-pink-glow/50 transition-all"
+                  />
+               </div>
+            </div>
+
+            <div className="flex flex-col gap-2 pt-2">
+               <div className="flex justify-between">
+                 <label className="font-mono text-[10px] text-text-dim tracking-widest uppercase">Quality</label>
+                 <span className="font-mono text-[10px] text-pink-glow font-bold">{quality}%</span>
+               </div>
+               <input 
+                 type="range" 
+                 value={quality} 
+                 onChange={e => setQuality(Number(e.target.value))} 
+                 min={10} max={100}
+                 className="accent-pink-glow cursor-pointer"
+               />
             </div>
           </div>
+
           <button 
             disabled={!svgText || isRendering} 
             onClick={doConvert}
