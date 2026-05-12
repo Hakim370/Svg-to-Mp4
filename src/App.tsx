@@ -7,14 +7,105 @@ import { useState, useCallback, useEffect } from 'react';
 import { Header } from './components/Header';
 import { Ticker } from './components/Ticker';
 import { VectraTool } from './components/VectraTool';
+import { GiftraTool } from './components/GiftraTool';
 import { Playground } from './components/Playground';
+import { AdminDashboard } from './components/AdminDashboard';
 import { Toaster, toast } from 'react-hot-toast';
+import { auth, db, loginWithGoogle } from './lib/firebase';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
-export type Tab = 'aura' | 'playground';
+export type Tab = 'aura' | 'playground' | 'gif' | 'admin';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('aura');
   const [playgroundSVG, setPlaygroundSVG] = useState<string | null>(null);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('aura_welcomed'));
+
+  const closeWelcome = () => {
+    setShowWelcome(false);
+    localStorage.setItem('aura_welcomed', 'true');
+  };
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      setUser(u); // Set user immediately
+      setLoading(false); // Stop loading immediately
+
+      if (u) {
+        try {
+          // Sync user to Firestore in the background
+          const userRef = doc(db, 'users', u.uid);
+          const userSnap = await getDoc(userRef);
+          const isMaster = u.email === 'hakimmia370@gmail.com';
+          
+          if (!userSnap.exists()) {
+            const newUser = {
+              uid: u.uid,
+              email: u.email,
+              displayName: u.displayName,
+              photoURL: u.photoURL,
+              role: isMaster ? 'admin' : 'user',
+              createdAt: serverTimestamp(),
+              lastLogin: serverTimestamp(),
+              exportCount: 0,
+              exportLimit: isMaster ? 999999 : 2000,
+              isBlocked: false
+            };
+            await setDoc(userRef, newUser);
+            
+            if (isMaster) {
+              await setDoc(doc(db, 'admins', u.uid), {
+                email: u.email,
+                createdAt: serverTimestamp()
+              });
+            }
+          } else {
+            const data = userSnap.data();
+            // Force upgrade master user limits if they are legacy or manually edited down
+            if (isMaster && (data.exportLimit || 0) < 999999) {
+              await setDoc(userRef, { 
+                exportLimit: 999999,
+                role: 'admin'
+              }, { merge: true });
+            }
+
+            await setDoc(userRef, {
+              lastLogin: serverTimestamp()
+            }, { merge: true });
+          }
+        } catch (err: any) {
+          console.error("Firestore sync error:", err);
+          // Don't log out the user, just notify
+          toast.error("Cloud data sync failed. Some features might be restricted.");
+        }
+      } else {
+        setUser(null);
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogin = async () => {
+    try {
+      await loginWithGoogle();
+      toast.success('Session Initiated');
+    } catch (err: any) {
+      console.error("Login attempt failed:", err);
+      toast.error(err.message || 'Login failed');
+      
+      if (err.message.includes('authorized domains')) {
+        toast('Diagnostic: Add ' + window.location.hostname + ' to Firebase Auth settings.', {
+          icon: '🛡️',
+          duration: 6000
+        });
+      }
+    }
+  };
 
   const handleSendToAura = useCallback((svg: string) => {
     setPlaygroundSVG(svg);
@@ -35,13 +126,104 @@ export default function App() {
       </div>
 
       <Ticker />
-      <Header activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <main className="flex-1">
-        {activeTab === 'aura' ? (
+      {showWelcome && (
+        <div className="welcome-banner px-4 md:px-9 py-6 bg-gradient-to-r from-cyan-glow/10 via-purple-glow/5 to-transparent border-b border-border-b1 animate-in fade-in slide-in-from-top-4 duration-700 relative overflow-hidden group">
+          <div className="absolute inset-0 bg-grid opacity-20" />
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex-1 max-w-2xl">
+              <h2 className="text-xl md:text-2xl font-black text-white mb-2 tracking-tighter uppercase tracking-[2px]">Welcome to Aura SVG Studio</h2>
+              <p className="text-xs text-text-dim leading-relaxed font-mono uppercase tracking-wider opacity-80">
+                The most powerful web-based SVG engine for generating professional video and high-quality GIFs. 
+                <span className="hidden sm:inline"> Simply upload an SVG, adjust your render settings, and export.</span>
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => {
+                  setPlaygroundSVG(`<svg width="1920" height="1080" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:%2300D4FF;stop-opacity:1" /><stop offset="100%" style="stop-color:%239B4DFF;stop-opacity:1" /></linearGradient></defs><rect width="100%" height="100%" fill="%23050505"/><circle cx="960" cy="540" r="300" stroke="url(%23g)" stroke-width="20" fill="none"><animate attributeName="r" values="300;450;300" dur="4s" repeatCount="indefinite" /></circle><text x="50%" y="54%" font-family="monospace" font-weight="900" font-size="60" fill="white" text-anchor="middle" letter-spacing="20">AURA ENGINE</text></svg>`);
+                  setActiveTab('aura');
+                  closeWelcome();
+                }}
+                className="px-6 py-2.5 bg-cyan-glow text-black font-black text-[10px] rounded-xl hover:bg-white transition-all uppercase tracking-widest shadow-[0_4px_25px_rgba(0,212,255,0.3)]"
+              >
+                Try Demo
+              </button>
+              <button 
+                onClick={closeWelcome}
+                className="px-6 py-2.5 bg-white/5 border border-border-b2 text-text-dim hover:text-white hover:border-white transition-all rounded-xl font-mono text-[10px] uppercase tracking-widest"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+          <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-glow/5 rounded-full blur-[100px] -mr-32 -mt-32" />
+        </div>
+      )}
+
+      <Header activeTab={activeTab} onTabChange={setActiveTab} user={user} />
+
+      <main className="flex-1 flex flex-col">
+        {activeTab === 'aura' && (
           <VectraTool initialSVG={playgroundSVG} clearInitialSVG={() => setPlaygroundSVG(null)} />
-        ) : (
+        )}
+        {activeTab === 'playground' && (
           <Playground onSendToAura={handleSendToAura} />
+        )}
+        {activeTab === 'gif' && (
+          <GiftraTool initialSVG={playgroundSVG} clearInitialSVG={() => setPlaygroundSVG(null)} />
+        )}
+        {activeTab === 'admin' && (
+          !user ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-4">
+              <div className="max-w-md w-full bg-s1/40 border border-border-b1 backdrop-blur-xl rounded-[32px] p-8 md:p-12 text-center relative overflow-hidden group shadow-[0_0_80px_rgba(0,212,255,0.08)]">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(0,212,255,0.1),transparent_70%)]" />
+                
+                <div className="relative z-10">
+                  <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-cyan-glow to-purple-glow rounded-3xl flex items-center justify-center font-black text-4xl text-white shadow-[0_0_50px_rgba(0,212,255,0.4)]">
+                    A
+                  </div>
+                  
+                  <h1 className="text-2xl font-black text-white mb-2 tracking-tighter uppercase tracking-[3px]">Admin Clearance</h1>
+                  <p className="font-mono text-[10px] text-text-dim mb-8 leading-relaxed uppercase tracking-widest">
+                    Secure Dashboard for System Administration
+                  </p>
+
+                  <button 
+                    onClick={handleLogin}
+                    className="w-full py-4 bg-gradient-to-r from-cyan-glow to-purple-glow rounded-2xl text-white font-bold text-xs tracking-[4px] uppercase shadow-[0_10px_30px_rgba(0,212,255,0.3)] hover:-translate-y-1 hover:shadow-[0_15px_45px_rgba(0,212,255,0.45)] transition-all flex items-center justify-center gap-3 active:scale-95"
+                  >
+                    IDENTIFY & LOGIN
+                  </button>
+                  
+                  {/* Common Fix for new domains */}
+                  <div className="mt-10 pt-6 border-t border-white/5 text-left">
+                    <div className="flex items-center gap-2 text-cyan-glow font-bold text-[9px] mb-3 uppercase tracking-widest">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-glow animate-pulse" />
+                      Domain Config Helper
+                    </div>
+                    <p className="text-[9px] text-text-dim leading-relaxed mb-3">
+                      If you see an "unauthorized domain" error, add this host to your Firebase Auth settings:
+                    </p>
+                    <div className="bg-black/60 p-3 rounded-xl border border-white/10 font-mono text-[9px] text-cyan-glow break-all flex justify-between items-center group">
+                      {window.location.hostname}
+                      <button 
+                        onClick={() => {
+                          navigator.clipboard.writeText(window.location.hostname);
+                          toast.success('Domain copied');
+                        }}
+                        className="p-1 px-2 bg-white/5 hover:bg-white/10 rounded transition-all text-[8px]"
+                      >
+                        COPY
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <AdminDashboard />
+          )
         )}
       </main>
 

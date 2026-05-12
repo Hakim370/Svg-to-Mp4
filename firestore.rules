@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // --- Global Safety Net ---
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email == 'hakimmia370@gmail.com' && request.auth.token.email_verified == true) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Entity Validation ---
+    function isValidUser(data) {
+      return data.uid is string && 
+             data.email is string && 
+             data.role in ['user', 'admin'];
+    }
+
+    function isValidSetting(data) {
+      return data.keys().size() >= 1;
+    }
+
+    // --- Collection Rules ---
+
+    // Connection test document
+    match /test/connection {
+      allow read: if true;
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      
+      // Allow creation of user doc for themselves
+      allow create: if isOwner(userId);
+      
+      // Update rules:
+      // Admins can update anything.
+      // Owners can only update their lastLogin, exportCount, and lastSettings.
+      allow update: if isAdmin() || (
+        isOwner(userId) && 
+        incoming().diff(existing()).affectedKeys().hasOnly(['lastLogin', 'exportCount', 'lastSettings'])
+      );
+    }
+
+    match /exports/{exportId} {
+      // Admins can list all. Users can only list their own.
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow get: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      
+      allow create: if isSignedIn() && 
+                       incoming().userId == request.auth.uid &&
+                       incoming().createdAt == request.time &&
+                       (!get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isBlocked', false)) &&
+                       (isAdmin() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('exportCount', 0) < get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('exportLimit', 2000));
+      
+      allow update, delete: if isAdmin();
+    }
+
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      // Only the master developer (with verified email) can create admins
+      allow create: if (request.auth.token.email == 'hakimmia370@gmail.com' && request.auth.token.email_verified == true) && adminId == request.auth.uid;
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

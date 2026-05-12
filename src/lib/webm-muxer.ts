@@ -62,8 +62,8 @@ export function buildWebM(chunks: WebMChunk[], W: number, H: number, fps: number
   const info = eb(0x1549A966, cc(
     eb(0x2AD7B1, wu(1000000, 4)),
     eb(0x4489, wf(durMs)),
-    eb(0x4D80, tenc.encode('VECTRA')),
-    eb(0x5741, tenc.encode('VECTRA'))
+    eb(0x4D80, tenc.encode('AURA')),
+    eb(0x5741, tenc.encode('AURA'))
   ));
 
   const track = eb(0xAE, cc(

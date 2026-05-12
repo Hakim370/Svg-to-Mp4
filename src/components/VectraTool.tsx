@@ -2,8 +2,11 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { cn } from '../lib/utils';
 import { toast } from 'react-hot-toast';
 import { buildWebM } from '../lib/webm-muxer';
+import * as MP4Muxer from 'mp4-muxer';
 import { renderSVGFrame } from '../lib/svg-processor';
-import { LucideMonitor, LucidePlay, LucideRotateCcw, LucideDownload, LucideZap, LucideSettings, LucideVideo, LucideHistory, LucideInfo } from 'lucide-react';
+import { LucideMonitor, LucidePlay, LucideRotateCcw, LucideDownload, LucideZap, LucideSettings, LucideVideo, LucideHistory, LucideInfo, LucideLock, LucideSave } from 'lucide-react';
+import { auth, db, handleFirestoreError, OperationType, loginWithGoogle } from '../lib/firebase';
+import { doc, getDoc, setDoc, updateDoc, increment, serverTimestamp, addDoc, collection, onSnapshot } from 'firebase/firestore';
 
 interface VectraToolProps {
   initialSVG: string | null;
@@ -27,6 +30,9 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
   const [log, setLog] = useState<{ msg: string; type: 'info' | 'success' | 'detail' }[]>([]);
   const [outURL, setOutURL] = useState<string | null>(null);
   const [history, setHistory] = useState<ExportHistory[]>([]);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [userStats, setUserStats] = useState({ count: 0, limit: 2000 });
+  const [news, setNews] = useState<string | null>(null);
   
   // Render Stats
   const [stats, setStats] = useState({
@@ -42,9 +48,98 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
   const [duration, setDuration] = useState(6);
   const [bg, setBg] = useState('#000000');
   const [quality, setQuality] = useState(85);
+  const [format, setFormat] = useState<'webm' | 'mp4'>('webm');
 
   const abortRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Check block status
+  useEffect(() => {
+    // Fetch Global News/Ad
+    const newsRef = doc(db, 'settings', 'global');
+    const unsubNews = onSnapshot(newsRef, (doc) => {
+      if (doc.exists()) {
+        setNews(doc.data().news || null);
+      }
+    }, (error) => {
+      console.warn('Global news feed restricted:', error.message);
+    });
+
+    if (!auth.currentUser) return () => unsubNews();
+    
+    const userRef = doc(db, 'users', auth.currentUser.uid);
+    const unsubscribe = onSnapshot(userRef, (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        setIsBlocked(data.isBlocked || false);
+        setUserStats({
+          count: data.exportCount || 0,
+          limit: data.exportLimit ?? 2000
+        });
+
+        // Load saved settings if any
+        if (data.lastSettings) {
+          const s = data.lastSettings;
+          if (s.resolution) setResolution(s.resolution);
+          if (s.fps) setFps(s.fps);
+          if (s.duration) setDuration(s.duration);
+          if (s.bg) setBg(s.bg);
+          if (s.quality) setQuality(s.quality);
+          if (s.format) setFormat(s.format);
+        }
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `users/${auth.currentUser?.uid}`);
+    });
+    return () => {
+      unsubNews();
+      unsubscribe();
+    };
+  }, [auth.currentUser]);
+
+  useEffect(() => {
+    const local = localStorage.getItem('vectra_settings');
+    if (local) {
+      try {
+        const s = JSON.parse(local);
+        if (s.resolution) setResolution(s.resolution);
+        if (s.fps) setFps(s.fps);
+        if (s.duration) setDuration(s.duration);
+        if (s.bg) setBg(s.bg);
+        if (s.quality) setQuality(s.quality);
+        if (s.format) setFormat(s.format);
+      } catch (e) {
+        console.warn('Failed to parse local settings');
+      }
+    }
+  }, []);
+
+  const saveSettings = async () => {
+    const settings = {
+      resolution,
+      fps,
+      duration,
+      bg,
+      quality,
+      format
+    };
+    
+    localStorage.setItem('vectra_settings', JSON.stringify(settings));
+    
+    if (!auth.currentUser) {
+      toast.success('Settings saved to browser');
+      return;
+    }
+    
+    try {
+      await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+        lastSettings: settings
+      });
+      toast.success('Settings saved to cloud');
+    } catch (err: any) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${auth.currentUser.uid}`);
+    }
+  };
 
   const addLog = (msg: string, type: 'info' | 'success' | 'detail' = 'info') => {
     setLog(prev => [...prev, { msg, type }]);
@@ -89,6 +184,16 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
   const doConvert = async () => {
     if (!svgText || !svgFile) return;
 
+    if (isBlocked) {
+      toast.error('Your access to AURA Engine is restricted');
+      return;
+    }
+
+    if (auth.currentUser && userStats.count >= userStats.limit) {
+      toast.error(`Export limit reached (${userStats.limit}). Contact admin for more exports.`);
+      return;
+    }
+
     setIsRendering(true);
     abortRef.current = false;
     setOutURL(null);
@@ -104,7 +209,9 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
     const t0 = performance.now();
 
     try {
-      if (typeof VideoEncoder !== 'undefined') {
+      if (typeof VideoEncoder !== 'undefined' && format === 'mp4') {
+        await encodeMP4(W, H, fps, duration, totalFrames, quality / 100, bg, t0);
+      } else if (typeof VideoEncoder !== 'undefined') {
         await encodeWithVideoEncoder(W, H, fps, duration, totalFrames, quality / 100, bg, t0);
       } else {
         await encodeWithMediaRecorder(W, H, fps, duration, totalFrames, quality / 100, bg, t0);
@@ -118,6 +225,70 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
       }
       setIsRendering(false);
     }
+  };
+
+  const encodeMP4 = async (W: number, H: number, fps: number, dur: number, total: number, q: number, background: string, t0: number) => {
+    let muxer = new MP4Muxer.Muxer({
+      target: new MP4Muxer.ArrayBufferTarget(),
+      video: {
+        codec: 'avc',
+        width: W,
+        height: H
+      },
+      fastStart: 'in-memory'
+    });
+
+    const encoder = new VideoEncoder({
+      output: (chunk, metadata) => muxer.addVideoChunk(chunk, metadata),
+      error: (e) => { throw e; }
+    });
+
+    encoder.configure({
+      codec: 'avc1.64002A', // H.264 High Profile, Level 4.2
+      width: W,
+      height: H,
+      bitrate: Math.round(q * 50000000), // Massive bitrate boost (up to 50Mbps) for Adobe Stock transparency/detail
+      framerate: fps,
+      avc: { format: 'avc' }
+    });
+
+    addLog(`Format: MP4 (H.264 High Profile)`, 'info');
+
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d')!;
+
+    for (let f = 0; f < total; f++) {
+      if (abortRef.current) throw new Error('aborted');
+      
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, W, H);
+      await renderSVGFrame(ctx, svgText!, f / fps, W, H);
+
+      const frame = new VideoFrame(canvas, { 
+        timestamp: Math.round(f * (1000000 / fps)), 
+        duration: Math.round(1000000 / fps) 
+      });
+      encoder.encode(frame, { keyFrame: f % 30 === 0 }); // Shorter keyframe interval for stock quality requirements
+      frame.close();
+
+      if (f % 5 === 0 || f === total - 1) {
+        const p = Math.round((f / total) * 90);
+        setProgress(p);
+        setStatus(`Encoding MP4… Frame ${f+1}/${total}`);
+      }
+      if (f % 10 === 0) await new Promise(r => setTimeout(r, 0));
+    }
+
+    setStatus('Finalizing MP4…');
+    await encoder.flush();
+    encoder.close();
+    muxer.finalize();
+
+    const buffer = (muxer.target as MP4Muxer.ArrayBufferTarget).buffer;
+    const blob = new Blob([buffer], { type: 'video/mp4' });
+    finalize(blob, t0, total);
   };
 
   const encodeWithVideoEncoder = async (W: number, H: number, fps: number, dur: number, total: number, q: number, background: string, t0: number) => {
@@ -220,7 +391,7 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
     finalize(blob, t0, total);
   };
 
-  const finalize = (blob: Blob, t0: number, total: number) => {
+  const finalize = async (blob: Blob, t0: number, total: number) => {
     const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
     const kb = Math.round(blob.size / 1024);
     const url = URL.createObjectURL(blob);
@@ -237,13 +408,39 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
     setStatus('✓ Done!');
     setIsRendering(false);
     addLog(`Complete — ${total} frames · ${elapsed}s · ${kb}KB`, 'success');
+
+    // Firestore Integration
+    if (auth.currentUser) {
+      try {
+        const fileName = svgFile?.name.replace(/\.svg$/i, '') || 'aura';
+        
+        // Log Export
+        await addDoc(collection(db, 'exports'), {
+          userId: auth.currentUser.uid,
+          fileName,
+          fileSize: kb,
+          duration,
+          fps,
+          resolution,
+          status: 'completed',
+          createdAt: serverTimestamp()
+        });
+
+        // Increment User Stats
+        await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+          exportCount: increment(1)
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, 'exports or users');
+      }
+    }
     
     const histItem: ExportHistory = {
       name: svgFile?.name.replace(/\.svg$/i, '') || 'aura',
       kb,
       url,
       date: new Date().toLocaleTimeString(),
-      format: 'webm'
+      format: format
     };
     setHistory(prev => [histItem, ...prev].slice(0, 5));
     toast.success('Conversion complete!');
@@ -251,15 +448,29 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
 
   return (
     <div className="pg-wrap grid grid-cols-1 lg:grid-cols-[1fr_330px] gap-6 px-4 md:px-9 py-7 items-start">
+      {isBlocked && (
+        <div className="col-span-full bg-pink-glow/10 border border-pink-glow/30 rounded-2xl p-6 flex items-center gap-6 mb-4 animate-in fade-in slide-in-from-top-4 duration-500">
+           <div className="w-14 h-14 bg-pink-glow/20 rounded-full flex items-center justify-center text-pink-glow">
+              <LucideLock size={28} />
+           </div>
+           <div>
+             <h3 className="text-pink-glow font-bold text-lg uppercase tracking-widest">ACCESS DENIED</h3>
+             <p className="text-text-dim font-mono text-xs mt-1 leading-relaxed">
+               Your account has been restricted by system administration. Cloud processing and engine access are disabled. <br/> 
+               <span className="text-pink-glow/50">Contact support for clearance: +880 1761 709821</span>
+             </p>
+           </div>
+        </div>
+      )}
       <div className="col flex flex-col gap-5">
         {/* Step 1: Upload */}
         <div className="card bg-s1 border border-border-b1 rounded-[18px] overflow-hidden group hover:border-border-b2 hover:shadow-[0_0_40px_rgba(0,212,255,0.05)] transition-all">
           <div className="ch px-5 py-4 border-b border-border-b1 flex items-center justify-between bg-gradient-to-r from-cyan-glow/5 to-transparent">
             <div className="flex items-center gap-3">
-              <div className="step-num w-6 h-6 rounded-lg bg-cyan-glow/15 border border-cyan-glow/25 flex items-center justify-center font-mono text-[9px] text-cyan-glow font-bold">01</div>
-              <span className="ct font-mono text-[8px] font-bold tracking-[3px] text-text-dim uppercase">Upload SVG File</span>
+              <div className="step-num w-6 h-6 rounded-lg bg-cyan-glow/15 border border-cyan-glow/25 flex items-center justify-center font-mono text-[10px] text-cyan-glow font-bold">01</div>
+              <span className="ct font-mono text-[10px] font-bold tracking-[3px] text-text-dim uppercase">Upload SVG File</span>
             </div>
-            <span className="font-mono text-[8px] text-text-dim tracking-[1.5px]">DRAG & DROP OR CLICK</span>
+            <span className="font-mono text-[9px] text-text-dim tracking-[1.5px] hidden sm:block">DRAG & DROP OR CLICK</span>
           </div>
           <div className="cb p-6">
             <input 
@@ -310,18 +521,28 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
 
         {/* Step 2: Settings */}
         <div className="card bg-s1 border border-border-b1 rounded-[18px] overflow-hidden">
-          <div className="ch px-5 py-4 border-b border-border-b1 flex items-center gap-3 bg-gradient-to-r from-cyan-glow/5 to-transparent">
-            <div className="step-num w-6 h-6 rounded-lg bg-cyan-glow/15 border border-cyan-glow/25 flex items-center justify-center font-mono text-[9px] text-cyan-glow font-bold">02</div>
-            <span className="ct font-mono text-[8px] font-bold tracking-[3px] text-text-dim uppercase">Render Settings</span>
+          <div className="ch px-5 py-4 border-b border-border-b1 flex items-center justify-between bg-gradient-to-r from-cyan-glow/5 to-transparent">
+            <div className="flex items-center gap-3">
+              <div className="step-num w-6 h-6 rounded-lg bg-cyan-glow/15 border border-cyan-glow/25 flex items-center justify-center font-mono text-[10px] text-cyan-glow font-bold">02</div>
+              <span className="ct font-mono text-[10px] font-bold tracking-[3px] text-text-dim uppercase">Render Settings</span>
+            </div>
+            <button 
+              onClick={saveSettings}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-cyan-glow/20 bg-cyan-glow/5 text-cyan-glow hover:bg-cyan-glow/10 transition-all font-mono text-[8px] uppercase tracking-widest"
+              title="Save current settings as default"
+            >
+              <LucideSave size={12} />
+              Save Config
+            </button>
           </div>
           <div className="cb p-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="flex flex-col gap-1.5">
-                <label className="font-mono text-[8px] text-text-dim tracking-[2px] uppercase">Resolution</label>
+                <label className="font-mono text-[10px] text-text-dim tracking-[2px] uppercase">Resolution</label>
                 <select 
                   value={resolution} 
                   onChange={(e) => setResolution(e.target.value)}
-                  className="bg-s2 border border-border-b2 rounded-lg p-2.5 text-text-main font-mono text-[10px] outline-none hover:border-cyan-glow/50 transition-all cursor-pointer"
+                  className="bg-s2 border border-border-b2 rounded-lg p-3 text-text-main font-mono text-[11px] outline-none hover:border-cyan-glow/50 transition-all cursor-pointer"
                 >
                   <option value="640x360">640×360 — Fast Test</option>
                   <option value="854x480">854×480 — SD</option>
@@ -330,11 +551,11 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
                 </select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="font-mono text-[8px] text-text-dim tracking-[2px] uppercase">Frame Rate</label>
+                <label className="font-mono text-[10px] text-text-dim tracking-[2px] uppercase">Frame Rate</label>
                 <select 
                   value={fps} 
                   onChange={(e) => setFps(Number(e.target.value))}
-                  className="bg-s2 border border-border-b2 rounded-lg p-2.5 text-text-main font-mono text-[10px] outline-none hover:border-cyan-glow/50 transition-all cursor-pointer"
+                  className="bg-s2 border border-border-b2 rounded-lg p-3 text-text-main font-mono text-[11px] outline-none hover:border-cyan-glow/50 transition-all cursor-pointer"
                 >
                   <option value="24">24 fps — Film</option>
                   <option value="30">30 fps — Standard</option>
@@ -342,31 +563,42 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
                 </select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="font-mono text-[8px] text-text-dim tracking-[2px] uppercase">Duration (sec)</label>
+                <label className="font-mono text-[10px] text-text-dim tracking-[2px] uppercase">Duration (sec)</label>
                 <input 
                   type="number" 
                   value={duration} 
                   onChange={(e) => setDuration(Number(e.target.value))}
                   min={1} max={120}
-                  className="bg-s2 border border-border-b2 rounded-lg p-2.5 text-text-main font-mono text-[10px] outline-none hover:border-cyan-glow/50 transition-all"
+                  className="bg-s2 border border-border-b2 rounded-lg p-3 text-text-main font-mono text-[11px] outline-none hover:border-cyan-glow/50 transition-all"
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="font-mono text-[8px] text-text-dim tracking-[2px] uppercase">Background</label>
+                <label className="font-mono text-[10px] text-text-dim tracking-[2px] uppercase">Background</label>
                 <select 
                   value={bg} 
                   onChange={(e) => setBg(e.target.value)}
-                  className="bg-s2 border border-border-b2 rounded-lg p-2.5 text-text-main font-mono text-[10px] outline-none hover:border-cyan-glow/50 transition-all cursor-pointer"
+                  className="bg-s2 border border-border-b2 rounded-lg p-3 text-text-main font-mono text-[11px] outline-none hover:border-cyan-glow/50 transition-all cursor-pointer"
                 >
                   <option value="#000000">Black</option>
                   <option value="#ffffff">White</option>
                   <option value="transparent">Transparent → Black</option>
                 </select>
               </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="font-mono text-[10px] text-text-dim tracking-[2px] uppercase">Export Format</label>
+                <select 
+                  value={format} 
+                  onChange={(e) => setFormat(e.target.value as 'webm' | 'mp4')}
+                  className="bg-s2 border border-border-b2 rounded-lg p-3 text-text-main font-mono text-[11px] outline-none hover:border-cyan-glow/50 transition-all cursor-pointer"
+                >
+                  <option value="webm">WEBM — High Quality</option>
+                  <option value="mp4">MP4 — Adobe Stock / Social</option>
+                </select>
+              </div>
               <div className="flex flex-col gap-1.5 sm:col-span-2">
                 <div className="flex items-center justify-between">
-                  <label className="font-mono text-[8px] text-text-dim tracking-[2px] uppercase">Quality</label>
-                  <div className="font-mono text-[9px] text-cyan-glow">{quality}% — {(quality / 100 * 5).toFixed(2)} Mbps</div>
+                  <label className="font-mono text-[10px] text-text-dim tracking-[2px] uppercase">Quality</label>
+                  <div className="font-mono text-[10px] text-cyan-glow">{quality}% — {(quality / 100 * 50).toFixed(2)} Mbps</div>
                 </div>
                 <input 
                   type="range" 
@@ -425,8 +657,8 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
         <div className="card bg-s1 border border-border-b1 rounded-[18px] overflow-hidden">
           <div className="ch px-5 py-4 border-b border-border-b1 flex items-center justify-between bg-gradient-to-r from-cyan-glow/5 to-transparent">
             <div className="flex items-center gap-3">
-              <div className="step-num w-6 h-6 rounded-lg bg-cyan-glow/15 border border-cyan-glow/25 flex items-center justify-center font-mono text-[9px] text-cyan-glow font-bold">03</div>
-              <span className="ct font-mono text-[8px] font-bold tracking-[3px] text-text-dim uppercase">Preview & Export</span>
+              <div className="step-num w-6 h-6 rounded-lg bg-cyan-glow/15 border border-cyan-glow/25 flex items-center justify-center font-mono text-[10px] text-cyan-glow font-bold">03</div>
+              <span className="ct font-mono text-[10px] font-bold tracking-[3px] text-text-dim uppercase">Preview & Export</span>
             </div>
             <span className="font-mono text-[8px] text-text-dim tracking-[1.5px]">{outURL ? 'EXPORT READY' : 'AWAITING FILE'}</span>
           </div>
@@ -452,7 +684,7 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
                 </div>
               )}
               <div className="pvbg absolute top-2.5 right-2.5 font-mono text-[8px] tracking-[2px] px-2.5 py-1 rounded-full bg-black/85 border border-border-b2 text-cyan-glow">
-                {outURL ? 'WEBM' : svgText ? 'SVG' : ''}
+                {outURL ? format.toUpperCase() : svgText ? 'SVG' : ''}
               </div>
               <div className="scan-line-animate absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-glow to-transparent opacity-40 pointer-events-none group-hover:block hidden" />
             </div>
@@ -461,7 +693,7 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
               <div className="ac mt-4 flex gap-2.5">
                 <a 
                   href={outURL} 
-                  download={`${svgFile?.name.replace(/\.svg$/i, '') || 'aura'}.webm`}
+                  download={`${svgFile?.name.replace(/\.svg$/i, '') || 'aura'}.${format}`}
                   className="ab flex-1 bg-gradient-to-r from-cyan-glow to-purple-glow text-white rounded-xl py-3 font-bold text-xs flex items-center justify-center gap-2 shadow-[0_2px_15px_rgba(0,212,255,0.2)] hover:-translate-y-0.5 hover:shadow-[0_6px_25px_rgba(0,212,255,0.35)] transition-all"
                 >
                   <LucideDownload size={14} /> Download
@@ -512,50 +744,48 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
                 <div className="sk font-mono text-[8px] text-text-dim tracking-widest uppercase">Rate</div>
               </div>
             </div>
+            
+            <div className="limit-card mt-4 p-4 bg-cyan-glow/5 border border-cyan-glow/20 rounded-xl relative overflow-hidden group">
+                <div className="flex justify-between items-end mb-2">
+                  <span className="font-mono text-[8px] text-text-dim tracking-widest uppercase">Exports Used</span>
+                  <span className="font-mono text-xs font-bold text-cyan-glow">
+                    {userStats.limit >= 2000 ? 'UNLIMITED' : `${userStats.count} / ${userStats.limit}`}
+                  </span>
+                </div>
+                <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-cyan-glow shadow-[0_0_8px_var(--color-cyan-glow)] transition-all duration-1000"
+                    style={{ width: `${userStats.limit >= 2000 ? 0 : Math.min(100, (userStats.count / userStats.limit) * 100)}%` }}
+                  />
+                </div>
+                <p className="mt-2 font-mono text-[7px] text-text-dim tracking-wider uppercase opacity-50">
+                  {userStats.limit >= 2000 ? 'Unlimited Processing Active' : `${userStats.limit - userStats.count} Conversions remaining`}
+                </p>
+               {userStats.count >= userStats.limit && (
+                 <div className="mt-2 py-1 px-2 bg-pink-glow/10 border border-pink-glow/20 rounded text-pink-glow font-mono text-[7px] text-center font-bold tracking-widest">
+                   LIMIT REACHED — CONTACT SUPPORT
+                 </div>
+               )}
+            </div>
           </div>
         </div>
 
-        {/* Aura News & Updates */}
-        <div className="card bg-[linear-gradient(135deg,rgba(0,212,255,0.04),rgba(155,77,255,0.06),rgba(255,61,127,0.04))] border border-cyan-glow/20 rounded-[18px] overflow-hidden relative group">
-          <div className="ch px-5 py-4 border-b border-cyan-glow/15 flex items-center justify-between bg-gradient-to-r from-cyan-glow/10 to-transparent">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-glow to-purple-glow flex items-center justify-center text-lg shadow-[0_0_18px_rgba(0,212,255,0.35)]">📢</div>
-              <div>
-                <div className="font-bold text-sm tracking-[3px] bg-gradient-to-r from-cyan-glow to-purple-glow bg-clip-text text-transparent uppercase">Latest News</div>
-                <div className="font-mono text-[7px] text-cyan-glow/50 tracking-[2px] uppercase">Aura Studio Updates</div>
+        {/* Global News Card */}
+        <div className="card bg-[linear-gradient(135deg,rgba(0,212,255,0.05),rgba(155,77,255,0.05))] border border-cyan-glow/20 rounded-[18px] overflow-hidden relative group">
+           <div className="px-5 py-4 border-b border-cyan-glow/10 flex items-center gap-2.5 bg-cyan-glow/10">
+              <LucideZap size={16} className="text-cyan-glow" />
+              <span className="font-bold text-xs tracking-widest text-cyan-glow uppercase tracking-[3px]">Billboard News</span>
+           </div>
+           <div className="p-5">
+              <div className="bg-black/30 border border-cyan-glow/10 rounded-xl p-4 min-h-[100px] flex items-center justify-center text-center">
+                 {news ? (
+                   <p className="font-mono text-[10px] text-text-dim leading-relaxed whitespace-pre-wrap">{news}</p>
+                 ) : (
+                   <div className="text-[9px] font-mono text-text-dim/40 italic">Awaiting transmission...</div>
+                 )}
               </div>
-            </div>
-            <div className="font-mono text-[7px] tracking-[2px] px-2 py-0.5 rounded-full bg-cyan-glow/15 border border-cyan-glow/30 text-cyan-glow animate-pulse">NEW</div>
-          </div>
-          <div className="cb p-5">
-            <div className="font-mono text-[9px] text-text-dim leading-relaxed mb-4">
-              Stay tuned for <b>Professional Assets</b>, new animation templates, and high-speed engine updates.
-            </div>
-            <div className="flex flex-col gap-2 mb-4">
-              <div className="flex items-center justify-between p-2 bg-black/25 border border-cyan-glow/10 rounded-lg font-mono text-[7px] text-text-dim group/item hover:bg-cyan-glow/5 transition-colors">
-                <div className="flex items-center gap-2">
-                  <div className="w-1 h-1 rounded-full bg-cyan-glow shadow-[0_0_6px_var(--color-cyan-glow)]" />
-                  Engine Optimization v2.0
-                </div>
-                <span className="text-[6px] opacity-40">ACTIVE</span>
-              </div>
-              <div className="flex items-center justify-between p-2 bg-black/25 border border-cyan-glow/10 rounded-lg font-mono text-[7px] text-text-dim group/item hover:bg-cyan-glow/5 transition-colors">
-                <div className="flex items-center gap-2">
-                  <div className="w-1 h-1 rounded-full bg-purple-glow shadow-[0_0_6px_var(--color-purple-glow)]" />
-                  New SVG Template Library
-                </div>
-                <span className="text-[6px] opacity-40">COMING</span>
-              </div>
-            </div>
-            <a 
-              href="https://www.facebook.com/hakimulla0370" 
-              target="_blank"
-              className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-cyan-glow to-purple-glow text-white rounded-xl font-bold text-[10px] tracking-widest uppercase hover:scale-105 transition-all shadow-[0_4px_20px_rgba(0,212,255,0.3)] button-shine-effect"
-            >
-              Connect on Facebook
-            </a>
-          </div>
-          <div className="absolute inset-0 bg-gradient-to-br from-cyan-glow/5 via-transparent to-purple-glow/5 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
+           </div>
+           <div className="scan-line-animate absolute top-0 left-0 right-0 h-[100%] bg-gradient-to-b from-cyan-glow/5 to-transparent pointer-events-none opacity-20" />
         </div>
 
         {/* History */}
@@ -578,7 +808,7 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
             ) : (
               <div className="flex flex-col gap-2">
                 {history.map((h, i) => (
-                  <div key={i} className="hi flex items-center gap-3 p-2.5 bg-s2 border border-border-b1 rounded-xl group hover:border-border-b2 transition-all">
+                   <div key={i} className="hi flex items-center gap-3 p-2.5 bg-s2 border border-border-b1 rounded-xl group hover:border-border-b2 transition-all">
                     <div className="ht w-8 h-5 bg-cyan-glow/15 border border-cyan-glow/10 rounded flex items-center justify-center text-[9px] text-cyan-glow">▶</div>
                     <div className="hin flex-1 min-w-0">
                       <div className="hn text-[10px] font-bold truncate text-text-main">{h.name}.{h.format}</div>

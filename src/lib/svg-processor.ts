@@ -50,7 +50,7 @@ export function stampSVG(raw: string, t: number): string {
   const loopedDelay = animDur > 0 ? t % animDur : t;
   const preciseCssFixStyle = `
 <style>
-/* VECTRA frame capture — time: ${t.toFixed(4)}s */
+/* AURA frame capture — time: ${t.toFixed(4)}s */
 * { animation-play-state: paused !important; animation-delay: -${loopedDelay.toFixed(5)}s !important; }
 </style>`;
 
