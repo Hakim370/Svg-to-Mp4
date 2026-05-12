@@ -8,6 +8,7 @@ import { Header } from './components/Header';
 import { Ticker } from './components/Ticker';
 import { VectraTool } from './components/VectraTool';
 import { GiftraTool } from './components/GiftraTool';
+import { BatchTool } from './components/BatchTool';
 import { Playground } from './components/Playground';
 import { AdminDashboard } from './components/AdminDashboard';
 import { Toaster, toast } from 'react-hot-toast';
@@ -15,7 +16,7 @@ import { auth, db, loginWithGoogle } from './lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
-export type Tab = 'aura' | 'playground' | 'gif' | 'admin';
+export type Tab = 'aura' | 'playground' | 'gif' | 'batch' | 'admin';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('aura');
@@ -172,6 +173,9 @@ export default function App() {
         )}
         {activeTab === 'gif' && (
           <GiftraTool initialSVG={playgroundSVG} clearInitialSVG={() => setPlaygroundSVG(null)} />
+        )}
+        {activeTab === 'batch' && (
+          <BatchTool />
         )}
         {activeTab === 'admin' && (
           !user ? (

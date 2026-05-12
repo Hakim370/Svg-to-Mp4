@@ -63,6 +63,18 @@ export function Header({ activeTab, onTabChange, user }: HeaderProps) {
           >
             ✦ SVG PLAYGROUND
           </button>
+          <button 
+            type="button"
+            onClick={() => onTabChange('batch')}
+            className={cn(
+              "font-mono text-[9px] font-bold tracking-[2px] px-4 py-2 rounded-full border transition-all uppercase whitespace-nowrap",
+              activeTab === 'batch' 
+                ? "bg-gradient-to-br from-purple-glow/20 to-cyan-glow/15 border-purple-glow text-text-main shadow-[0_0_14px_rgba(155,77,255,0.25)]" 
+                : "border-border-b2 bg-purple-glow/5 text-text-dim hover:border-purple-glow hover:text-purple-glow"
+            )}
+          >
+            ⚙ BATCH CONVERT
+          </button>
         </nav>
 
         <div className="user-auth flex items-center gap-3 pl-4 border-l border-border-b1">

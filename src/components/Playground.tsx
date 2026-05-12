@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { cn } from '../lib/utils';
 import { LucideTerminal, LucidePlay, LucideTrash2, LucideCopy, LucideRefreshCcw, LucideZap, LucideSend } from 'lucide-react';
+import { sanitizeSVG } from '../lib/svg-processor';
 
 interface PlaygroundProps {
   onSendToAura: (svg: string) => void;
@@ -75,12 +76,13 @@ export function Playground({ onSendToAura }: PlaygroundProps) {
   };
 
   const runPreview = () => {
-    if (!code.trim()) {
+    const sanitized = sanitizeSVG(code);
+    if (!sanitized.trim()) {
       setStatus('NO SVG CODE — paste something first');
       return;
     }
 
-    if (!code.includes('<svg')) {
+    if (!sanitized.includes('<svg')) {
       setStatus('INVALID — must contain an <svg> element');
       return;
     }
@@ -97,7 +99,7 @@ export function Playground({ onSendToAura }: PlaygroundProps) {
   </style>
 </head>
 <body>
-  ${code}
+  ${sanitized}
 </body>
 </html>`;
 
@@ -140,6 +142,10 @@ export function Playground({ onSendToAura }: PlaygroundProps) {
   const loadSample = () => {
     setCode(PG_SAMPLE);
     runPreview();
+  };
+
+  const handleSendToAura = (svg: string) => {
+    onSendToAura(sanitizeSVG(svg));
   };
 
   return (
@@ -197,7 +203,7 @@ export function Playground({ onSendToAura }: PlaygroundProps) {
           </div>
 
           <button 
-            onClick={() => onSendToAura(code)}
+            onClick={() => handleSendToAura(code)}
             className="pg-send-btn w-full py-4 bg-gradient-to-r from-cyan-glow to-purple-glow text-white font-bold text-xs tracking-[2.5px] uppercase hover:tracking-[3.5px] transition-all disabled:opacity-30 disabled:cursor-not-allowed button-shine-effect"
             disabled={!code.trim()}
           >

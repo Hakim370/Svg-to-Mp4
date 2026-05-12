@@ -65,35 +65,65 @@ export function stampSVG(raw: string, t: number): string {
   return s;
 }
 
+export function sanitizeSVG(raw: string): string {
+  let s = raw.trim();
+  // Strip markdown markers if present
+  if (s.startsWith('```')) {
+    s = s.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '');
+  }
+  return s;
+}
+
 export function renderSVGFrame(ctx: CanvasRenderingContext2D, raw: string, t: number, W: number, H: number): Promise<void> {
   return new Promise((resolve) => {
-    const stamped = stampSVG(raw, t);
-    const blob = new Blob([stamped], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      try {
-        const ar = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 16 / 9;
-        let dw = W, dh = H, dx = 0, dy = 0;
-        if (W / H > ar) {
-          dh = W / ar;
-          dy = -(dh - H) / 2;
-        } else {
-          dw = H * ar;
-          dx = -(dw - W) / 2;
+    try {
+      const sanitized = sanitizeSVG(raw);
+      const stamped = stampSVG(sanitized, t);
+      const blob = new Blob([stamped], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      let img: HTMLImageElement | null = new Image();
+      img.crossOrigin = 'anonymous';
+      
+      const cleanup = () => {
+        if (url) URL.revokeObjectURL(url);
+        if (img) {
+          img.onload = null;
+          img.onerror = null;
+          img = null;
         }
-        ctx.drawImage(img, dx, dy, dw, dh);
-      } catch (e) {
-        console.error("Frame render error", e);
-      }
-      URL.revokeObjectURL(url);
+      };
+
+      img.onload = () => {
+        try {
+          if (img) {
+            const ar = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 16 / 9;
+            let dw = W, dh = H, dx = 0, dy = 0;
+            if (W / H > ar) {
+              dh = W / ar;
+              dy = -(dh - H) / 2;
+            } else {
+              dw = H * ar;
+              dx = -(dw - W) / 2;
+            }
+            ctx.drawImage(img, dx, dy, dw, dh);
+          }
+        } catch (e) {
+          console.error("Frame render error", e);
+        }
+        cleanup();
+        resolve();
+      };
+
+      img.onerror = (err) => {
+        console.error("SVG Image load error", err);
+        cleanup();
+        resolve();
+      };
+
+      img.src = url;
+    } catch (err) {
+      console.error("renderSVGFrame fatal error", err);
       resolve();
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve();
-    };
-    img.src = url;
+    }
   });
 }

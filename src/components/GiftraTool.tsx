@@ -2,8 +2,8 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { cn } from '../lib/utils';
 import { toast } from 'react-hot-toast';
 import gifshot from 'gifshot';
-import { renderSVGFrame } from '../lib/svg-processor';
-import { LucideMonitor, LucidePlay, LucideRotateCcw, LucideDownload, LucideZap, LucideSettings, LucideImage, LucideHistory, LucideInfo, LucideLock } from 'lucide-react';
+import { renderSVGFrame, sanitizeSVG } from '../lib/svg-processor';
+import { LucideMonitor, LucidePlay, LucideRotateCcw, LucideDownload, LucideZap, LucideSettings, LucideImage, LucideHistory, LucideInfo, LucideLock, LucideSave } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType, loginWithGoogle } from '../lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, increment, serverTimestamp, addDoc, collection, onSnapshot } from 'firebase/firestore';
 
@@ -46,8 +46,62 @@ export function GiftraTool({ initialSVG, clearInitialSVG }: GiftraToolProps) {
   const [fps, setFps] = useState(10);
   const [duration, setDuration] = useState(3);
   const [bg, setBg] = useState('#000000');
+  const [quality, setQuality] = useState(85);
 
   const abortRef = useRef(false);
+
+  // Persistence
+  const saveSettings = async () => {
+    const settings = { resolution, fps, duration, bg };
+    localStorage.setItem('giftra_settings', JSON.stringify(settings));
+
+    if (auth.currentUser) {
+      try {
+        await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+          giftraSettings: settings
+        });
+        toast.success('Settings synced to profile');
+      } catch (err) {
+        console.error('Cloud sync failed', err);
+        toast.success('Settings saved locally');
+      }
+    } else {
+      toast.success('Settings saved locally');
+    }
+  };
+
+  // Load settings
+  useEffect(() => {
+    const local = localStorage.getItem('giftra_settings');
+    if (local) {
+      try {
+        const s = JSON.parse(local);
+        if (s.resolution) setResolution(s.resolution);
+        if (s.fps) setFps(s.fps);
+        if (s.duration) setDuration(s.duration);
+        if (s.bg) setBg(s.bg);
+      } catch (e) {
+        console.warn('Local settings parse error');
+      }
+    }
+
+    if (auth.currentUser) {
+      const load = async () => {
+        const snap = await getDoc(doc(db, 'users', auth.currentUser.uid));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.giftraSettings) {
+            const s = data.giftraSettings;
+            if (s.resolution) setResolution(s.resolution);
+            if (s.fps) setFps(s.fps);
+            if (s.duration) setDuration(s.duration);
+            if (s.bg) setBg(s.bg);
+          }
+        }
+      };
+      load();
+    }
+  }, []);
 
   // Check block status & Global news
   useEffect(() => {
@@ -95,7 +149,7 @@ export function GiftraTool({ initialSVG, clearInitialSVG }: GiftraToolProps) {
     setSvgFile(f);
     const r = new FileReader();
     r.onload = (ev) => {
-      const text = ev.target.result as string;
+      const text = sanitizeSVG(ev.target.result as string);
       setSvgText(text);
       toast.success('SVG loaded to GIFTRA');
       setOutURL(null);
@@ -107,8 +161,9 @@ export function GiftraTool({ initialSVG, clearInitialSVG }: GiftraToolProps) {
 
   useEffect(() => {
     if (initialSVG) {
-      setSvgText(initialSVG);
-      setSvgFile(new File([initialSVG], 'playground.svg', { type: 'image/svg+xml' }));
+      const sanitized = sanitizeSVG(initialSVG);
+      setSvgText(sanitized);
+      setSvgFile(new File([sanitized], 'playground.svg', { type: 'image/svg+xml' }));
       clearInitialSVG();
     }
   }, [initialSVG, clearInitialSVG]);
@@ -260,12 +315,23 @@ export function GiftraTool({ initialSVG, clearInitialSVG }: GiftraToolProps) {
     <div className="pg-wrap grid grid-cols-1 lg:grid-cols-[1fr_330px] gap-6 px-4 md:px-9 py-7 items-start">
       <div className="col flex flex-col gap-5">
         <div className="card bg-s1 border border-border-b1 rounded-[18px] overflow-hidden">
-          <div className="ch px-5 py-4 border-b border-border-b1 flex items-center justify-between bg-gradient-to-r from-pink-glow/5 to-transparent">
-             <div className="flex items-center gap-3">
-               <div className="step-num w-6 h-6 rounded-lg bg-pink-glow/15 border border-pink-glow/25 flex items-center justify-center font-mono text-[10px] text-pink-glow font-bold">GIF</div>
-               <span className="ct font-mono text-[10px] font-bold tracking-[3px] text-text-dim uppercase">SVG TO GIF CONVERTER</span>
+          <div className="ch px-6 py-5 border-b border-border-b1 flex items-center justify-between bg-gradient-to-r from-pink-glow/5 to-transparent">
+                <div className="flex items-center gap-4">
+                  <div className="step-num w-8 h-8 rounded-xl bg-pink-glow/20 border border-pink-glow/30 flex items-center justify-center text-pink-glow font-black text-sm">GIF</div>
+                  <div>
+                    <h3 className="text-white font-bold text-sm tracking-wide uppercase">GIF Creator</h3>
+                    <p className="text-[9px] text-text-dim tracking-wider uppercase opacity-60">SVG to Animation</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={saveSettings}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-pink-glow/20 bg-pink-glow/5 text-pink-glow hover:bg-pink-glow/10 transition-all font-mono text-[9px] uppercase tracking-widest"
+                  title="Save current settings as default"
+                >
+                  <LucideSave size={12} />
+                  Save
+                </button>
              </div>
-          </div>
           <div className="cb p-6">
             {!svgFile ? (
               <label 
@@ -371,7 +437,7 @@ export function GiftraTool({ initialSVG, clearInitialSVG }: GiftraToolProps) {
           <div className="limit-card mt-4 p-4 bg-pink-glow/5 border border-pink-glow/20 rounded-xl relative overflow-hidden group">
               <div className="flex justify-between items-end mb-2">
                 <span className="font-mono text-[8px] text-text-dim tracking-widest uppercase">Exports Used</span>
-                <span className="font-mono text-xs font-bold text-pink-glow">
+                <span className="font-mono text-[10px] font-bold text-pink-glow">
                   {userStats.limit >= 2000 ? 'UNLIMITED' : `${userStats.count} / ${userStats.limit}`}
                 </span>
               </div>

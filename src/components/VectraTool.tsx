@@ -3,7 +3,7 @@ import { cn } from '../lib/utils';
 import { toast } from 'react-hot-toast';
 import { buildWebM } from '../lib/webm-muxer';
 import * as MP4Muxer from 'mp4-muxer';
-import { renderSVGFrame } from '../lib/svg-processor';
+import { renderSVGFrame, sanitizeSVG } from '../lib/svg-processor';
 import { LucideMonitor, LucidePlay, LucideRotateCcw, LucideDownload, LucideZap, LucideSettings, LucideVideo, LucideHistory, LucideInfo, LucideLock, LucideSave } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType, loginWithGoogle } from '../lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, increment, serverTimestamp, addDoc, collection, onSnapshot } from 'firebase/firestore';
@@ -154,7 +154,7 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
     setSvgFile(f);
     const r = new FileReader();
     r.onload = (ev) => {
-      const text = ev.target.result as string;
+      const text = sanitizeSVG(ev.target.result as string);
       setSvgText(text);
       toast.success('SVG loaded successfully');
       setOutURL(null);
@@ -166,8 +166,9 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
 
   useEffect(() => {
     if (initialSVG) {
-      setSvgText(initialSVG);
-      setSvgFile(new File([initialSVG], 'playground.svg', { type: 'image/svg+xml' }));
+      const sanitized = sanitizeSVG(initialSVG);
+      setSvgText(sanitized);
+      setSvgFile(new File([sanitized], 'playground.svg', { type: 'image/svg+xml' }));
       clearInitialSVG();
     }
   }, [initialSVG, clearInitialSVG]);
@@ -465,12 +466,15 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
       <div className="col flex flex-col gap-5">
         {/* Step 1: Upload */}
         <div className="card bg-s1 border border-border-b1 rounded-[18px] overflow-hidden group hover:border-border-b2 hover:shadow-[0_0_40px_rgba(0,212,255,0.05)] transition-all">
-          <div className="ch px-5 py-4 border-b border-border-b1 flex items-center justify-between bg-gradient-to-r from-cyan-glow/5 to-transparent">
-            <div className="flex items-center gap-3">
-              <div className="step-num w-6 h-6 rounded-lg bg-cyan-glow/15 border border-cyan-glow/25 flex items-center justify-center font-mono text-[10px] text-cyan-glow font-bold">01</div>
-              <span className="ct font-mono text-[10px] font-bold tracking-[3px] text-text-dim uppercase">Upload SVG File</span>
+          <div className="ch px-6 py-5 border-b border-border-b1 flex items-center justify-between bg-gradient-to-r from-cyan-glow/5 to-transparent">
+            <div className="flex items-center gap-4">
+              <div className="step-num w-8 h-8 rounded-xl bg-cyan-glow/20 border border-cyan-glow/30 flex items-center justify-center text-cyan-glow font-black text-sm">1</div>
+              <div>
+                <h3 className="text-white font-bold text-sm tracking-wide uppercase">Select SVG</h3>
+                <p className="text-[9px] text-text-dim tracking-wider uppercase opacity-60">Upload your source file</p>
+              </div>
             </div>
-            <span className="font-mono text-[9px] text-text-dim tracking-[1.5px] hidden sm:block">DRAG & DROP OR CLICK</span>
+            <span className="font-mono text-[9px] text-text-dim tracking-[1.5px] hidden sm:block">READY FOR INPUT</span>
           </div>
           <div className="cb p-6">
             <input 
@@ -521,18 +525,21 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
 
         {/* Step 2: Settings */}
         <div className="card bg-s1 border border-border-b1 rounded-[18px] overflow-hidden">
-          <div className="ch px-5 py-4 border-b border-border-b1 flex items-center justify-between bg-gradient-to-r from-cyan-glow/5 to-transparent">
-            <div className="flex items-center gap-3">
-              <div className="step-num w-6 h-6 rounded-lg bg-cyan-glow/15 border border-cyan-glow/25 flex items-center justify-center font-mono text-[10px] text-cyan-glow font-bold">02</div>
-              <span className="ct font-mono text-[10px] font-bold tracking-[3px] text-text-dim uppercase">Render Settings</span>
+          <div className="ch px-6 py-5 border-b border-border-b1 flex items-center justify-between bg-gradient-to-r from-cyan-glow/5 to-transparent">
+            <div className="flex items-center gap-4">
+              <div className="step-num w-8 h-8 rounded-xl bg-cyan-glow/20 border border-cyan-glow/30 flex items-center justify-center text-cyan-glow font-black text-sm">2</div>
+              <div>
+                <h3 className="text-white font-bold text-sm tracking-wide uppercase">Render Options</h3>
+                <p className="text-[9px] text-text-dim tracking-wider uppercase opacity-60">Set video length & quality</p>
+              </div>
             </div>
             <button 
               onClick={saveSettings}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-cyan-glow/20 bg-cyan-glow/5 text-cyan-glow hover:bg-cyan-glow/10 transition-all font-mono text-[8px] uppercase tracking-widest"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-cyan-glow/20 bg-cyan-glow/5 text-cyan-glow hover:bg-cyan-glow/10 transition-all font-mono text-[9px] uppercase tracking-widest"
               title="Save current settings as default"
             >
               <LucideSave size={12} />
-              Save Config
+              Save
             </button>
           </div>
           <div className="cb p-6">
@@ -655,12 +662,15 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
 
         {/* Step 3: Preview */}
         <div className="card bg-s1 border border-border-b1 rounded-[18px] overflow-hidden">
-          <div className="ch px-5 py-4 border-b border-border-b1 flex items-center justify-between bg-gradient-to-r from-cyan-glow/5 to-transparent">
-            <div className="flex items-center gap-3">
-              <div className="step-num w-6 h-6 rounded-lg bg-cyan-glow/15 border border-cyan-glow/25 flex items-center justify-center font-mono text-[10px] text-cyan-glow font-bold">03</div>
-              <span className="ct font-mono text-[10px] font-bold tracking-[3px] text-text-dim uppercase">Preview & Export</span>
+          <div className="ch px-6 py-5 border-b border-border-b1 flex items-center justify-between bg-gradient-to-r from-cyan-glow/5 to-transparent">
+            <div className="flex items-center gap-4">
+              <div className="step-num w-8 h-8 rounded-xl bg-cyan-glow/20 border border-cyan-glow/30 flex items-center justify-center text-cyan-glow font-black text-sm">3</div>
+              <div>
+                <h3 className="text-white font-bold text-sm tracking-wide uppercase">Final Export</h3>
+                <p className="text-[9px] text-text-dim tracking-wider uppercase opacity-60">Preview & Download</p>
+              </div>
             </div>
-            <span className="font-mono text-[8px] text-text-dim tracking-[1.5px]">{outURL ? 'EXPORT READY' : 'AWAITING FILE'}</span>
+            <span className="font-mono text-[8px] text-text-dim tracking-[1.5px] uppercase">{outURL ? 'Success' : 'Ready'}</span>
           </div>
           <div className="cb p-6">
             <div className="pv bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center relative border border-border-b2 shadow-[inset_0_0_60px_rgba(0,0,0,0.5)] group">
@@ -748,7 +758,7 @@ export function VectraTool({ initialSVG, clearInitialSVG }: VectraToolProps) {
             <div className="limit-card mt-4 p-4 bg-cyan-glow/5 border border-cyan-glow/20 rounded-xl relative overflow-hidden group">
                 <div className="flex justify-between items-end mb-2">
                   <span className="font-mono text-[8px] text-text-dim tracking-widest uppercase">Exports Used</span>
-                  <span className="font-mono text-xs font-bold text-cyan-glow">
+                  <span className="font-mono text-[10px] font-bold text-cyan-glow">
                     {userStats.limit >= 2000 ? 'UNLIMITED' : `${userStats.count} / ${userStats.limit}`}
                   </span>
                 </div>
