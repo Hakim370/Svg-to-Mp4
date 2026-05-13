@@ -19,6 +19,7 @@ interface BatchFile {
   status: 'waiting' | 'processing' | 'success' | 'failed';
   progress: number;
   outURL: string | null;
+  outBlob?: Blob;
   error?: string;
   size: number;
 }
@@ -200,7 +201,7 @@ export function BatchTool() {
         updateFileStatus(item.id, 'processing', 0);
         const blob = await encodeMP4(item.text, W, H, fps, duration, totalFrames, quality / 100, bg, item.id);
         const url = URL.createObjectURL(blob);
-        updateFileStatus(item.id, 'success', 100, url);
+        updateFileStatus(item.id, 'success', 100, url, undefined, blob);
         
         // Update Firestore
         if (auth.currentUser) {
@@ -229,8 +230,8 @@ export function BatchTool() {
     toast.success('Batch Processing Finished');
   };
 
-  const updateFileStatus = (id: string, status: any, progress: number, url?: string | null, error?: string) => {
-    setQueue(prev => prev.map(f => f.id === id ? { ...f, status, progress, outURL: url ?? f.outURL, error } : f));
+  const updateFileStatus = (id: string, status: any, progress: number, url?: string | null, error?: string, blob?: Blob) => {
+    setQueue(prev => prev.map(f => f.id === id ? { ...f, status, progress, outURL: url ?? f.outURL, error, outBlob: blob ?? f.outBlob } : f));
   };
 
   const encodeMP4 = async (svg: string, W: number, H: number, fps: number, dur: number, total: number, q: number, background: string, id: string): Promise<Blob> => {
@@ -251,7 +252,8 @@ export function BatchTool() {
       codec: codec,
       width: W,
       height: H,
-      bitrate: Math.round(q * 100000000), 
+      bitrate: Math.round(q * 150000000), // Boosted to 150Mbps for Adobe Stock Quality
+      bitrateMode: 'constant',
       framerate: fps,
       avc: { format: 'avc' }
     });
@@ -298,24 +300,39 @@ export function BatchTool() {
   };
 
   const downloadAll = async () => {
-    const successItems = queue.filter(f => f.outURL);
-    if (successItems.length === 0) return;
-
-    const zip = new JSZip();
-    for (const item of successItems) {
-      if (!item.outURL) continue;
-      const resp = await fetch(item.outURL);
-      const blob = await resp.blob();
-      zip.file(`${item.file.name.replace(/\.svg$/i, '')}.mp4`, blob);
+    const successItems = queue.filter(f => f.outBlob);
+    if (successItems.length === 0) {
+      toast.error('No successful exports to bundle');
+      return;
     }
 
-    const content = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(content);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `aura_batch_${new Date().getTime()}.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const tId = toast.loading(`Bundling ${successItems.length} files...`);
+    try {
+      const zip = new JSZip();
+      for (const item of successItems) {
+        if (!item.outBlob) continue;
+        zip.file(`${item.file.name.replace(/\.svg$/i, '')}.mp4`, item.outBlob);
+      }
+
+      const content = await zip.generateAsync({ 
+        type: 'blob',
+        compression: 'STORE' // Since MP4 is already compressed
+      });
+      
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `aura_batch_${new Date().getTime()}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      toast.success('ZIP Export Complete', { id: tId });
+    } catch (err) {
+      console.error('ZIP Error:', err);
+      toast.error('Failed to generate ZIP', { id: tId });
+    }
   };
 
   return (
@@ -456,10 +473,18 @@ export function BatchTool() {
 
              <div className="flex flex-col gap-5">
                 <div className="flex flex-col gap-2">
+                   <label className="font-mono text-[9px] text-text-dim uppercase tracking-[2px]">Export Format</label>
+                   <div className="bg-s2/50 border border-border-b2/50 p-3 rounded-xl font-mono text-[10px] text-cyan-glow/80 flex items-center gap-2">
+                      <LucideZap size={10} className="text-purple-glow" />
+                      <span>MP4 — Adobe Stock / Social</span>
+                   </div>
+                </div>
+
+                <div className="flex flex-col gap-2">
                    <label className="font-mono text-[9px] text-text-dim uppercase tracking-[2px]">Resolution</label>
                    <select value={resolution} onChange={e => setResolution(e.target.value)} className="bg-s2 border border-border-b2 p-3 rounded-xl font-mono text-[10px] text-white outline-none hover:border-cyan-glow/50 transition-all">
                       <option value="1280x720">1280x720 (HD)</option>
-                      <option value="1920x1080">1920x1080 (FHD)</option>
+                      <option value="1920x1080">1920x1080 (Adobe Stock / FHD)</option>
                       <option value="2560x1440">2560x1440 (2K)</option>
                       <option value="3840x2160">3840x2160 (4K UHD)</option>
                    </select>
@@ -485,16 +510,19 @@ export function BatchTool() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                   <div className="flex justify-between">
-                     <label className="font-mono text-[9px] text-text-dim uppercase tracking-[2px]">Quality</label>
-                     <span className="font-mono text-[10px] text-cyan-glow">{quality}%</span>
+                   <div className="flex justify-between items-end">
+                     <div className="flex flex-col">
+                        <label className="font-mono text-[9px] text-text-dim uppercase tracking-[2px]">Master Quality</label>
+                        <span className="text-[7px] text-cyan-glow/40 uppercase tracking-[1px]">Adobe Stock Optimized</span>
+                     </div>
+                     <span className="font-mono text-[10px] text-cyan-glow font-bold">{quality}%</span>
                    </div>
                    <input 
                      type="range" 
                      value={quality} 
                      onChange={e => setQuality(Number(e.target.value))} 
-                     min={10} max={100}
-                     className="accent-cyan-glow cursor-pointer"
+                     min={80} max={100}
+                     className="accent-cyan-glow cursor-pointer mt-1"
                    />
                 </div>
                 
