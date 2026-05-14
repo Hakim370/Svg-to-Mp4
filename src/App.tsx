@@ -133,10 +133,10 @@ export default function App() {
           <div className="absolute inset-0 bg-grid opacity-20" />
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="flex-1 max-w-2xl">
-              <h2 className="text-xl md:text-2xl font-black text-white mb-2 tracking-tighter uppercase tracking-[2px]">Welcome to Aura SVG Studio</h2>
+              <h1 className="text-xl md:text-2xl font-black text-white mb-2 tracking-tighter uppercase tracking-[2px]">Aura Studio — Professional SVG to MP4 & GIF</h1>
               <p className="text-xs text-text-dim leading-relaxed font-mono uppercase tracking-wider opacity-80">
                 The most powerful web-based SVG engine for generating professional video and high-quality GIFs. 
-                <span className="hidden sm:inline"> Simply upload an SVG, adjust your render settings, and export.</span>
+                <span className="hidden sm:inline"> Simply upload an SVG, adjust your render settings, and export for Adobe Stock or Social Media.</span>
               </p>
             </div>
             <div className="flex items-center gap-3">

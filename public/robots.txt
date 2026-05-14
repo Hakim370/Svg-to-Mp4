@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://app.netlify.com/projects/svg-mp4/sitemap.xml
