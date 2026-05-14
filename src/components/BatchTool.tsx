@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { cn } from '../lib/utils';
 import { toast } from 'react-hot-toast';
 import * as MP4Muxer from 'mp4-muxer';
@@ -34,10 +34,30 @@ export function BatchTool() {
   const [quality, setQuality] = useState(85);
   const [userStats, setUserStats] = useState({ count: 0, limit: 1000 });
   const [isBlocked, setIsBlocked] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const BATCH_EXPORT_LIMIT = 1000;
 
   const abortRef = useRef(false);
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setIsDragging(true);
+    } else if (e.type === 'dragleave') {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFiles(e.dataTransfer.files);
+    }
+  };
 
   const saveSettings = async () => {
     // Local persistence first
@@ -375,7 +395,16 @@ export function BatchTool() {
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-8 flex-1">
         <div className="main-col flex flex-col gap-6">
           {/* Dropzone */}
-          <div className="card bg-s1 border border-border-b1 rounded-[24px] overflow-hidden group hover:border-border-b2 transition-all">
+          <div 
+            className={cn(
+              "card bg-s1 border border-border-b1 rounded-[24px] overflow-hidden group hover:border-border-b2 transition-all",
+              isDragging && "border-cyan-glow bg-cyan-glow/5"
+            )}
+            onDragEnter={handleDrag}
+            onDragOver={handleDrag}
+            onDragLeave={handleDrag}
+            onDrop={handleDrop}
+          >
              <input 
                type="file" 
                multiple 
