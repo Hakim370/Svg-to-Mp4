@@ -505,7 +505,9 @@ export function BatchTool() {
                    <label className="font-mono text-[9px] text-text-dim uppercase tracking-[2px]">Backfill Color</label>
                    <select value={bg} onChange={e => setBg(e.target.value)} className="bg-s2 border border-border-b2 p-3 rounded-xl font-mono text-[10px] text-white outline-none hover:border-cyan-glow/50 transition-all">
                       <option value="#000000">Black</option>
+                      <option value="#111111">Dark Gray</option>
                       <option value="#ffffff">White</option>
+                      <option value="#ff00ff">Magenta (Debug)</option>
                    </select>
                 </div>
 

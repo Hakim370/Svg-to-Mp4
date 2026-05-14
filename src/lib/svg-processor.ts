@@ -16,9 +16,14 @@ export function stampSVG(raw: string, t: number): string {
     if (p.length >= 4) { vw = p[2]; vh = p[3]; }
   }
   
-  // Ensure dimensions
-  s = s.replace(/(<svg\b[^>]*?)\s+width=["'][^"']*["']/gi, '$1')
-       .replace(/(<svg\b[^>]*?)\s+height=["'][^"']*["']/gi, '$1')
+  // Force xmlns if missing
+  if (!s.toLowerCase().includes('xmlns=')) {
+    s = s.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+  }
+
+  // Ensure svg has width and height to help browser dimensions
+  s = s.replace(/(<svg\s+[^>]*?)width=["'][^"']*["']/gi, '$1')
+       .replace(/(<svg\s+[^>]*?)height=["'][^"']*["']/gi, '$1')
        .replace(/<svg\b/i, `<svg width="${vw}" height="${vh}"`);
 
   // SMIL animations
@@ -79,31 +84,30 @@ export function renderSVGFrame(ctx: CanvasRenderingContext2D, raw: string, t: nu
     try {
       const sanitized = sanitizeSVG(raw);
       const stamped = stampSVG(sanitized, t);
-      const blob = new Blob([stamped], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      let img: HTMLImageElement | null = new Image();
+      
+      const img: HTMLImageElement | null = new Image();
       img.crossOrigin = 'anonymous';
       
       const cleanup = () => {
-        if (url) URL.revokeObjectURL(url);
         if (img) {
           img.onload = null;
           img.onerror = null;
-          img = null;
+          try { img.src = ''; } catch(e) {}
         }
       };
 
       img.onload = () => {
         try {
           if (img) {
-            const ar = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 16 / 9;
+            const ar = (img.naturalWidth && img.naturalHeight) ? (img.naturalWidth / img.naturalHeight) : (W / H);
             let dw = W, dh = H, dx = 0, dy = 0;
+            
             if (W / H > ar) {
-              dh = W / ar;
-              dy = -(dh - H) / 2;
-            } else {
               dw = H * ar;
-              dx = -(dw - W) / 2;
+              dx = (W - dw) / 2;
+            } else {
+              dh = W / ar;
+              dy = (H - dh) / 2;
             }
             ctx.drawImage(img, dx, dy, dw, dh);
           }
@@ -120,7 +124,8 @@ export function renderSVGFrame(ctx: CanvasRenderingContext2D, raw: string, t: nu
         resolve();
       };
 
-      img.src = url;
+      // Using base64 is more reliable for canvas drawing in cross-domain environments
+      img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(stamped)));
     } catch (err) {
       console.error("renderSVGFrame fatal error", err);
       resolve();
