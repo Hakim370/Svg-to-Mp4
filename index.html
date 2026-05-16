@@ -9,6 +9,76 @@
     <meta name="author" content="Hakim Ullah (hakimullah0370)" />
     <meta name="google-site-verification" content="google969091bb71fa8138" />
     
+    <!-- Security & Anti-Cloning Measures -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://pagead2.googlesyndication.com https://adservice.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https:; frame-src 'self' https:;">
+    <meta name="referrer" content="no-referrer">
+    <style>
+      /* Disable selection and dragging to prevent scraping */
+      body {
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+      }
+      img, a {
+        -webkit-user-drag: none;
+        user-drag: none;
+      }
+      /* Prevent Printing/PDF Saving */
+      @media print {
+        body { display: none !important; }
+      }
+    </style>
+    <script>
+      // 1. Domain Guard (Anti-Cloning)
+      (function() {
+        const _0x1a2b = ["svg-mp4.netlify.app", "localhost", "ais-dev", "ais-pre", "127.0.0.1"];
+        const _0x3c4d = window.location.hostname;
+        let _0x5e6f = false;
+        _0x1a2b.forEach(d => { if (_0x3c4d.includes(d)) _0x5e6f = true; });
+        if (!_0x5e6f) {
+          window.stop();
+          document.documentElement.innerHTML = "<h1>UNAUTHORIZED CLONE DETECTED</h1>";
+          window.location.href = "https://svg-mp4.netlify.app/";
+        }
+      })();
+
+      // 2. Iframe / Clickjacking Protection
+      if (window.self !== window.top) {
+        window.top.location = window.self.location;
+      }
+
+      // 3. Disable Right Click & Key Shortcuts
+      document.addEventListener('contextmenu', e => e.preventDefault());
+      document.onkeydown = function(e) {
+        if (e.keyCode == 123 || 
+           (e.ctrlKey && e.shiftKey && (e.keyCode == 73 || e.keyCode == 74 || e.keyCode == 67)) || 
+           (e.ctrlKey && (e.keyCode == 85 || e.keyCode == 83))) {
+          return false;
+        }
+      };
+
+      // 4. Advanced Anti-DevTools Logic
+      (function() {
+        const check = function() {
+          const start = new Date();
+          debugger;
+          const end = new Date();
+          if (end - start > 100) {
+            document.body.innerHTML = "<h1>Security Protocol Active: DevTools Detected</h1>";
+            window.location.reload();
+          }
+        };
+        setInterval(check, 1000);
+      })();
+
+      // 5. Console Persistence
+      setInterval(() => {
+        console.clear();
+        console.log('%c AURA STUDIO %c v4.0 SECURE ', 'background: #00d4ff; color: #000; font-weight: bold; font-size: 20px; padding: 5px 10px; border-radius: 5px 0 0 5px;', 'background: #ff0055; color: #fff; font-weight: bold; font-size: 20px; padding: 5px 10px; border-radius: 0 5px 5px 0;');
+      }, 1000);
+    </script>
+    
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Aura Studio | SVG to MP4 & GIF Converter" />
